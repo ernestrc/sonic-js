@@ -2,8 +2,15 @@
 
 WebSockets Client library for the Sonic protocol
 
-# Usage
+# Installation
+- Using npm:
+```
+npm install sonic-js
+```
 
+- For browser usage, bundling has has been tested with browserify and babel.
+
+# Usage
 ```javascript
 var Client = require('sonic-js').Client;
 var assert = require('assert');
