@@ -2,7 +2,7 @@ var assert = require('chai').assert;
 
 module.exports.testHappyPathSingle = function (client, query, n, done) {
   client.run(query, function(err, data, traceId) {
-    assert(typeof traceId !== 'undefined');
+    assert(typeof traceId !== 'undefined', 'traceId is undefined in run method on `testHappyPathSingle`');
     if (err) {
       done(err);
       return;
@@ -21,7 +21,7 @@ module.exports.testHappyPath = function (client, query, n, done) {
   var traceId;
 
   client.run(query, function(err, data, traceId) {
-    assert(typeof traceId !== 'undefined');
+    assert(typeof traceId !== 'undefined', 'traceId is undefined in run done callback on `testHappyPath` test');
     if (err) {
       done(err);
       return;
@@ -49,7 +49,7 @@ module.exports.testHappyPath = function (client, query, n, done) {
   });
 
   stream.on('done', function(err) {
-    assert(typeof traceId !== 'undefined');
+    assert(typeof traceId !== 'undefined', 'traceId is undefined in stream done callback on `testHappyPath` test');
     if (err) {
       done(err);
     } else if (_done === 1) {
@@ -66,7 +66,7 @@ module.exports.expectError = function(client, query, done) {
   var traceId;
 
   client.run(query, function(err, traceId) {
-    assert(typeof traceId !== 'undefined');
+    assert(typeof traceId !== 'undefined', 'traceId is undefined in run done callback on `expectError` test');
     if (err) {
       if (done) {
         if (_done === 1) {
@@ -97,7 +97,7 @@ module.exports.expectError = function(client, query, done) {
   });
 
   stream.on('done', function(err) {
-    assert(typeof traceId !== 'undefined');
+    assert(typeof traceId !== 'undefined', 'traceId is undefined in stream done callback on `expectError` test');
     if (err) {
       if (done) {
         if (_done === 1) {
