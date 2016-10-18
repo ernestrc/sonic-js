@@ -1,4 +1,4 @@
-# Sonic-js [![Build Status](https://travis-ci.org/xarxa6/sonic-js.svg)](https://travis-ci.org/xarxa6/sonic-js) [![npm version](https://badge.fury.io/js/sonicd.svg)](https://badge.fury.io/js/sonicd)
+# Sonic-js [![Build Status](https://travis-ci.org/xarxa6/sonic-js.svg)](https://travis-ci.org/xarxa6/sonic-js) [![npm version](https://badge.fury.io/js/sonic-js.svg)](https://badge.fury.io/js/sonic-js)
 
 Client library for the Sonic protocol over WebSockets 
 
