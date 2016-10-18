@@ -1,0 +1,13 @@
+sudo: required
+language: node
+branches:
+  only:
+    - dev
+    - master
+services:
+  - docker
+notifications:
+  email:
+    recipients:
+      - ernest@unstable.build
+script: scripts/test.sh

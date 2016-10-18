@@ -1,0 +1,15 @@
+{
+  "main": "ws.js",
+  "scripts": {
+    "test": "node_modules/mocha/bin/mocha -r chai ws.js && node_modules/mocha/bin/mocha -r chai load.js"
+  },
+  "author": "ernest@unstable.build",
+  "license": "MIT",
+  "repository": "https://github.com/xarxa6/sonicd",
+  "dependencies": {
+  },
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "mocha": "^2.5.3"
+  }
+}
