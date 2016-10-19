@@ -45,6 +45,5 @@ test_exit $SONICD_CONTAINER
 echo "deployed sonicd container: $SONICD_CONTAINER. starting tests in 5s..";
 sleep 5;
 
-cd $DIR/../ && npm install && 
-  cd $DIR/../spec/ && npm install && npm test &&
+cd $DIR/../ && npm install && npm test &&
   cd $DIR/../examples && npm install && node example.js

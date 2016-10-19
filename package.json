@@ -6,6 +6,9 @@
   "author": "ernest@unstable.build",
   "license": "MIT",
   "repository": "https://github.com/xarxa6/sonic-js",
+  "scripts": {
+    "test": "node_modules/mocha/bin/mocha -r chai spec/ws.js"
+  },
   "dependencies": {
     "bufferutil": "^1.2.1",
     "utf-8-validate": "^1.2.1",
