@@ -1,8 +1,7 @@
 var assert = require('chai').assert;
 
-module.exports.testHappyPathSingle = function (client, query, n, done) {
-  client.run(query, function(err, data, traceId) {
-    assert(typeof traceId !== 'undefined', 'traceId is undefined in run method on `testHappyPathSingle`');
+module.exports.testHappyPathSingle = function(client, query, n, done) {
+  client.run(query, function(err, data) {
     if (err) {
       done(err);
       return;
@@ -13,15 +12,13 @@ module.exports.testHappyPathSingle = function (client, query, n, done) {
     }
     done();
   });
-}
+};
 
-module.exports.testHappyPath = function (client, query, n, done) {
-  var stream;
+module.exports.testHappyPath = function(client, query, n, done) {
   var _done = 0;
-  var traceId;
+  var stream, traceId;
 
-  client.run(query, function(err, data, traceId) {
-    assert(typeof traceId !== 'undefined', 'traceId is undefined in run done callback on `testHappyPath` test');
+  client.run(query, function(err, data) {
     if (err) {
       done(err);
       return;
@@ -36,7 +33,7 @@ module.exports.testHappyPath = function (client, query, n, done) {
 
   stream = client.stream(query);
 
-  stream.on('trace', function(id) {
+  stream.on('started', function(id) {
     traceId = id;
   });
 
@@ -58,15 +55,13 @@ module.exports.testHappyPath = function (client, query, n, done) {
       _done += 1;
     }
   });
-}
+};
 
 module.exports.expectError = function(client, query, done) {
   var _done = 0;
   var stream;
-  var traceId;
 
-  client.run(query, function(err, traceId) {
-    assert(typeof traceId !== 'undefined', 'traceId is undefined in run done callback on `expectError` test');
+  client.run(query, function(err) {
     if (err) {
       if (done) {
         if (_done === 1) {
@@ -82,22 +77,11 @@ module.exports.expectError = function(client, query, done) {
 
   stream = client.stream(query);
 
-  stream.on('trace', function(id) {
-    traceId = id;
+  stream.on('done', function() {
+    done(new Error('stream emitted `done` but `error` expected'));
   });
 
   stream.on('error', function(err) {
-    if (err) {
-      if (done) {
-        done();
-      }
-    } else {
-      done(new Error('expected error but no error returned'));
-    }
-  });
-
-  stream.on('done', function(err) {
-    assert(typeof traceId !== 'undefined', 'traceId is undefined in stream done callback on `expectError` test');
     if (err) {
       if (done) {
         if (_done === 1) {
@@ -110,21 +94,21 @@ module.exports.expectError = function(client, query, done) {
       done(new Error('expected error but no error returned'));
     }
   });
-}
+};
 
-module.exports.doAuthenticate = function (client, done, apiKeyMaybe) {
+module.exports.doAuthenticate = function(client, done, apiKeyMaybe) {
   var apiKey = apiKeyMaybe || '1234';
-  client.authenticate('spec_tests', apiKey, function(err) {
+  client.authenticate('spec_tests', apiKey, function(err, token) {
     if (err) {
       done(new Error('failed to authenticate'));
       return;
     }
 
-    if (client.token) {
-      done();
+    if (token) {
+      done(null, token);
     } else {
       done(new Error('protocol error: no token received from server'));
     }
   });
-}
+};
 

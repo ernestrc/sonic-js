@@ -1,8 +1,8 @@
 'use strict';
 
-function toMsg(query, tokenMaybe) {
+function toMsg(query) {
   var traceId = query.trace_id || query.traceId;
-  var token = query.token || query.auth || tokenMaybe;
+  var token = query.token || query.auth;
   return {
     e: 'Q',
     v: query.query,

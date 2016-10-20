@@ -1,18 +1,17 @@
-#!/usr/bin/env node
-
-//var Client = require('sonic-js').Client;
+// var Client = require('sonic-js').Client;
 var Client = require('../src/lib.js').Client;
 var assert = require('assert');
+var host = process.env.SONIC_HOST || 'wss://0.0.0.0:443';
 
-var client = new Client('wss://0.0.0.0:443');
+var client = new Client(host + '/v1/query');
 
 
 var query = {
-  query: '5',
+  query: '10',
   config: {
-    "class" : "SyntheticSource",
-    "seed" : 1000,
-    "progress-delay" : 10
+    class: 'SyntheticSource',
+    seed: 1000,
+    'progress-delay': 10
   }
 };
 
@@ -28,7 +27,6 @@ client.run(query, function(err, res) {
     console.log(e);
   });
 
-  client.close();
   console.log('exec is done!');
 
 });
@@ -45,7 +43,7 @@ stream.on('data', function(data) {
 
 stream.on('progress', function(p) {
   done += p.progress;
-  console.log('running.. ' + done + "/" + p.total + " "+ p.units);
+  console.log('running.. ' + done + '/' + p.total + ' ' + p.units);
 });
 
 stream.on('output', function(out) {
@@ -65,7 +63,6 @@ stream.on('error', function(err) {
 });
 
 
-
 var query2 = {
   query: '5',
   config: 'secured_test',
@@ -73,9 +70,9 @@ var query2 = {
 
 /* AUTHENTICATED Client.prototype.run */
 
-//`secured_test` source can be accessed without
-//an auth token that grants
-//authorization equal or higher than 3.
+// `secured_test` source can be accessed without
+// an auth token that grants
+// authorization equal or higher than 3.
 client.run(query2, function(err, res) {
   assert.throws(function () {
     if (err) {
@@ -95,20 +92,21 @@ client.authenticate(USER, API_KEY, function(err, token) {
   }
 
   query2.auth = token;
+  console.log(query2);
 
   client.run(query2, function(err, res) {
     if (err) {
-      console.log(err);
-      return;
+      throw err;
     }
 
     res.forEach(function(e) {
       console.log(e);
     });
 
-    client.close();
-
     console.log('secured exec is done!');
 
+    // close ws
+    client.close();
+
   });
-})
+});
