@@ -72,6 +72,13 @@ Client.prototype.send = function(doneCb, outputCb, progressCb, metadataCb, start
 
     ws.on('message', function(message) {
       var msg = BrowserWebSocket ? JSON.parse(message.data) : JSON.parse(message.toString('utf-8'));
+      function checkMsg() {
+        if (msg.v) {
+          done(new Error('Query with trace_id `' + msg.p.trace_id + '` failed: ' + msg.v));
+        } else {
+          done(null);
+        }
+      }
 
       switch (msg.e) {
         case 'P':
@@ -79,13 +86,6 @@ Client.prototype.send = function(doneCb, outputCb, progressCb, metadataCb, start
           break;
 
         case 'D':
-          function checkMsg() {
-            if (msg.v) {
-              done(new Error('Query with trace_id `' + msg.p.trace_id + '` failed: ' + msg.v));
-            } else {
-              done(null);
-            }
-          }
           isDone = true;
           if (BrowserWebSocket) {
             ws.send(JSON.stringify({ e: 'A' }));
