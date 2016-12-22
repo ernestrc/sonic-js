@@ -39,10 +39,6 @@ stream.on('progress', function(p) {
   console.log('running.. ' + done + '/' + p.total + ' ' + p.units);
 });
 
-stream.on('output', function(out) {
-  console.log(out);
-});
-
 stream.on('metadata', function(meta) {
   console.log('metadata: ' + JSON.stringify(meta));
 });
