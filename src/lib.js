@@ -5,6 +5,7 @@ var WebSocket =  BrowserWebSocket || require('ws');
 var EventEmitter = require('events');
 var util = require('util');
 var utils = require('./util');
+var noop = function() {};
 
 // this is an ugly hack to prevent browseryfied `ws` module to throw errors at runtime
 // because the EventEmitter API used in Node.js is not available with the WebSocket browser API
@@ -14,13 +15,24 @@ if (BrowserWebSocket) {
   };
 }
 
-function cancel(ws) {
+function cancel(ws, _cb) {
+  var cb = typeof _cb === 'function' ? _cb : noop;
+  function doSend() {
+    if (BrowserWebSocket) {
+      try {
+        ws.send(JSON.stringify({ e: 'C' }));
+        cb();
+      } catch (e) {
+        cb(e);
+      }
+    } else {
+      ws.send(JSON.stringify({ e: 'C' }), cb);
+    }
+  }
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ e: 'C' }));
+    doSend();
   } else {
-    ws.on('open', function() {
-      ws.send(JSON.stringify({ e: 'C' }));
-    });
+    ws.on('open', doSend);
   }
 }
 
@@ -186,8 +198,8 @@ Client.prototype.stream = function(query) {
 
   ws = this.exec(queryMsg, done, output, progress, metadata, started);
 
-  emitter.cancel = function() {
-    cancel(ws);
+  emitter.cancel = function(cb) {
+    cancel(ws, cb);
   };
 
   return emitter;
@@ -214,8 +226,8 @@ Client.prototype.run = function(query, doneCb) {
   ws = this.exec(queryMsg, done, output);
 
   return {
-    cancel: function() {
-      cancel(ws);
+    cancel: function(cb) {
+      cancel(ws, cb);
     }
   };
 };

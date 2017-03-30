@@ -43,18 +43,22 @@ describe('stream#cancel', function() {
       query: '100',
       config: { class: 'SyntheticSource' }
     };
+    var cancelCb = false;
     var emitter = client.stream(query);
 
     assert.equal(client.ws.length, 1);
 
     emitter.on('done', function() {
       assert.equal(client.ws.length, 0);
+      assert(cancelCb, 'cancelCb was not called!');
       done();
     });
     emitter.on('error', function(err) {
       done(err);
     });
-    emitter.cancel();
+    emitter.cancel(function() {
+      cancelCb = true;
+    });
   });
 });
 
@@ -65,15 +69,19 @@ describe('run#cancel', function() {
       query: '100',
       config: { class: 'SyntheticSource' }
     };
+    var cancelCb = false;
     var closeable = client.run(query, function(err, d) {
       if (err || d.length !== 0) {
         done(err || new Error('data not empty!'));
       } else {
         assert.equal(client.ws.length, 0);
+        assert(cancelCb, 'cancelCb was not called!');
         done();
       }
     });
     assert.equal(client.ws.length, 1);
-    closeable.cancel();
+    closeable.cancel(function() {
+      cancelCb = true;
+    });
   });
 });
