@@ -5,6 +5,7 @@ var WebSocket =  BrowserWebSocket || require('ws');
 var EventEmitter = require('events');
 var util = require('util');
 var utils = require('./util');
+var SonicMessage = utils.SonicMessage;
 var noop = function() {};
 
 // this is an ugly hack to prevent browseryfied `ws` module to throw errors at runtime
@@ -20,13 +21,13 @@ function cancel(ws, _cb) {
   function doSend() {
     if (BrowserWebSocket) {
       try {
-        ws.send(JSON.stringify({ e: 'C' }));
+        ws.send(SonicMessage.CANCEL);
         cb();
       } catch (e) {
         cb(e);
       }
     } else {
-      ws.send(JSON.stringify({ e: 'C' }), cb);
+      ws.send(SonicMessage.CANCEL, cb);
     }
   }
   if (ws.readyState === WebSocket.OPEN) {
@@ -121,10 +122,10 @@ Client.prototype.send = function(doneCb, outputCb, progressCb, metadataCb, start
         case 'D':
           isDone = true;
           if (BrowserWebSocket) {
-            ws.send(JSON.stringify({ e: 'A' }));
+            ws.send(SonicMessage.ACK);
             checkMsg();
           } else {
-            ws.send(JSON.stringify({ e: 'A' }), checkMsg);
+            ws.send(SonicMessage.ACK, checkMsg);
           }
           break;
 

@@ -54,5 +54,9 @@ function toProgress(payload) {
 
 module.exports = {
   toMsg: toMsg,
-  toProgress: toProgress
+  toProgress: toProgress,
+  SonicMessage: {
+    ACK: JSON.stringify({ e: 'A' }),
+    CANCEL: JSON.stringify({ e: 'C' })
+  }
 };
