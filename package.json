@@ -1,13 +1,13 @@
 {
   "name": "sonic-js",
-  "version": "0.6.6",
+  "version": "0.7.0",
   "description": "ws client library for the Sonic protocol",
   "main": "src/lib.js",
   "author": "ernest@unstable.build",
   "license": "MIT",
   "repository": "https://github.com/xarxa6/sonic-js",
   "scripts": {
-    "test": "node_modules/mocha/bin/mocha -r chai spec/ws.js"
+    "test": "node_modules/mocha/bin/mocha -r chai spec/close.js spec/ws.js"
   },
   "dependencies": {
     "bufferutil": "^1.2.1",

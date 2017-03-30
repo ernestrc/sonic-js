@@ -14,8 +14,19 @@ if (BrowserWebSocket) {
   };
 }
 
+function cancel(ws) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ e: 'C' }));
+  } else {
+    ws.on('open', function() {
+      ws.send(JSON.stringify({ e: 'C' }));
+    });
+  }
+}
+
 function Client(sonicAddress) {
   this.url = sonicAddress;
+  this.ws = [];
 }
 
 function SonicEmitter() {
@@ -30,13 +41,23 @@ Client.prototype.send = function(doneCb, outputCb, progressCb, metadataCb, start
   var metadata = metadataCb || (function() {});
   var isDone = false;
   var isError = false;
+  var self = this;
 
   return function(message, ws) {
 
     ws.send(message);
 
     function done(err, id) {
-      ws.close();
+      var idx;
+
+      ws.close(1000, 'completed');
+
+      if ((idx = self.ws.indexOf(ws)) < 0) {
+        throw new Error('ws not found');
+      }
+
+      self.ws.splice(idx, 1);
+
       doneCb(err, id);
     }
 
@@ -127,11 +148,16 @@ Client.prototype.exec = function(message, doneCb, outputCb, progressCb, metadata
   ws.on('open', function() {
     doExec(JSON.stringify(message), ws);
   });
+
+  this.ws.push(ws);
+
+  return ws;
 };
 
 Client.prototype.stream = function(query) {
   var emitter = new SonicEmitter();
   var queryMsg = utils.toMsg(query);
+  var ws;
 
   function done(err) {
     if (err) {
@@ -158,7 +184,11 @@ Client.prototype.stream = function(query) {
     emitter.emit('started', traceId);
   }
 
-  this.exec(queryMsg, done, output, progress, metadata, started);
+  ws = this.exec(queryMsg, done, output, progress, metadata, started);
+
+  emitter.cancel = function() {
+    cancel(ws);
+  };
 
   return emitter;
 };
@@ -167,6 +197,7 @@ Client.prototype.run = function(query, doneCb) {
 
   var data = [];
   var queryMsg = utils.toMsg(query);
+  var ws;
 
   function done(err) {
     if (err) {
@@ -180,7 +211,13 @@ Client.prototype.run = function(query, doneCb) {
     data.push(elems);
   }
 
-  this.exec(queryMsg, done, output);
+  ws = this.exec(queryMsg, done, output);
+
+  return {
+    cancel: function() {
+      cancel(ws);
+    }
+  };
 };
 
 Client.prototype.authenticate = function(user, apiKey, doneCb, traceId) {
@@ -210,9 +247,7 @@ Client.prototype.authenticate = function(user, apiKey, doneCb, traceId) {
 };
 
 Client.prototype.close = function() {
-  if (this.ws) {
-    this.ws.close();
-  }
+  this.ws.forEach(cancel);
 };
 
 module.exports.Client = Client;

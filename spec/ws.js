@@ -105,7 +105,7 @@ function runSpecTests(client, id) {
   });
 }
 
-describe('Sonicd ws', function() {
+describe('Sonic ws', function() {
 
   var client = new Client(sonicEndpoint);
 
@@ -126,7 +126,7 @@ describe('Sonicd ws', function() {
   });
 
 
-  describe('Sonicd ws auth', function() {
+  describe('Sonic ws auth', function() {
 
     it('should throw an error if api key is invalid', function(done) {
       client.authenticate('spec_tests', 'mariano', function(err) {
@@ -150,7 +150,7 @@ describe('Sonicd ws', function() {
   });
 
 
-  describe('Sonicd ws with authentication', function() {
+  describe('Sonic ws with authentication', function() {
 
     var authenticated = new Client(sonicEndpoint);
 
@@ -163,6 +163,11 @@ describe('Sonicd ws', function() {
         token = t;
         done();
       });
+    });
+
+    after(function(done) {
+      authenticated.close();
+      done();
     });
 
     // client is authenticated
@@ -211,7 +216,6 @@ describe('Sonicd ws', function() {
           }
         };
         util.expectError(authenticated, query, done);
-        authenticated.close();
       }, 'only_from_ip'); // check server's reference.conf
     });
   });
