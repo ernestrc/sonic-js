@@ -1,23 +1,21 @@
-'use strict';
+const BrowserWebSocket = global.MozWebSocket || global.WebSocket;
+const WebSocket = BrowserWebSocket || require('ws'); // eslint-disable-line global-require
+const EventEmitter = require('events');
+const utils = require('./util');
 
-var BrowserWebSocket = global.MozWebSocket || global.WebSocket;
-var WebSocket =  BrowserWebSocket || require('ws');
-var EventEmitter = require('events');
-var util = require('util');
-var utils = require('./util');
-var SonicMessage = utils.SonicMessage;
-var noop = function() {};
+const SonicMessage = utils.SonicMessage;
+const noop = () => {};
 
 // this is an ugly hack to prevent browseryfied `ws` module to throw errors at runtime
 // because the EventEmitter API used in Node.js is not available with the WebSocket browser API
 if (BrowserWebSocket) {
-  WebSocket.prototype.on = function(event, callback) {
-    this['on' + event] = callback;
+  WebSocket.prototype.on = function on(event, callback) {
+    this[`on${event}`] = callback;
   };
 }
 
 function cancel(ws, _cb) {
-  var cb = typeof _cb === 'function' ? _cb : noop;
+  const cb = typeof _cb === 'function' ? _cb : noop;
   function doSend() {
     if (BrowserWebSocket) {
       try {
@@ -37,230 +35,220 @@ function cancel(ws, _cb) {
   }
 }
 
-function Client(sonicAddress) {
-  this.url = sonicAddress;
-  this.ws = [];
-}
+class SonicEmitter extends EventEmitter {}
 
-function SonicEmitter() {
-  EventEmitter.call(this);
-}
+class Client {
+  constructor(sonicAddress) {
+    this.url = sonicAddress;
+    this.ws = [];
+  }
 
-util.inherits(SonicEmitter, EventEmitter);
+  doSend(doneCb, outputCb, progressCb, metadataCb, startedCb) {
+    const output = outputCb || noop;
+    const progress = progressCb || noop;
+    const metadata = metadataCb || noop;
+    let isDone = false;
+    let isError = false;
 
-Client.prototype.send = function(doneCb, outputCb, progressCb, metadataCb, startedCb) {
-  var output = outputCb || (function() {});
-  var progress = progressCb || (function() {});
-  var metadata = metadataCb || (function() {});
-  var isDone = false;
-  var isError = false;
-  var self = this;
+    return (message, ws) => {
+      ws.send(message);
 
-  return function(message, ws) {
+      const done = (err, id) => {
+        let idx;
 
-    ws.send(message);
+        ws.close(1000, 'completed');
 
-    function done(err, id) {
-      var idx;
-
-      ws.close(1000, 'completed');
-
-      if ((idx = self.ws.indexOf(ws)) < 0) {
-        throw new Error('ws not found');
-      }
-
-      self.ws.splice(idx, 1);
-
-      doneCb(err, id);
-    }
-
-    function closedUnexp() {
-      done(new Error('connection closed unexpectedly'));
-    }
-
-    ws.on('close', function(ev) {
-      // browser
-      if (BrowserWebSocket) {
-        if (isError) {
-          done(new Error('WebSocket close code: ' + ev.code + '; reason: ' + ev.reason));
-        } else if (ev.code !== 1000 && !isDone) {
-          closedUnexp();
+        if ((idx = this.ws.indexOf(ws)) < 0) {
+          throw new Error('ws not found');
         }
+
+        this.ws.splice(idx, 1);
+
+        doneCb(err, id);
+      };
+
+      const closedUnexp = () => {
+        done(new Error('connection closed unexpectedly'));
+      };
+
+      ws.on('close', (ev) => {
+      // browser
+        if (BrowserWebSocket) {
+          if (isError) {
+            done(new Error(`WebSocket close code: ${ev.code}; reason: ${ev.reason}`));
+          } else if (ev.code !== 1000 && !isDone) {
+            closedUnexp();
+          }
 
         // ws
-      } else if (!isDone && ev !== 1000) {
-        closedUnexp();
-      }
-    });
+        } else if (!isDone && ev !== 1000) {
+          closedUnexp();
+        }
+      });
 
-    ws.on('error', function(ev) {
+      ws.on('error', (ev) => {
       // ev is defined with `ws`, but not with the
       // browser's WebSocket API
-      if (BrowserWebSocket) {
-        isError = true;
-      } else {
-        isDone = true;
-        done(ev);
-      }
-    });
-
-    ws.on('message', function(message) {
-      var msg = BrowserWebSocket ? JSON.parse(message.data) : JSON.parse(message.toString('utf-8'));
-      function checkMsg() {
-        if (msg.v) {
-          done(new Error('Query with trace_id `' + msg.p.trace_id + '` failed: ' + msg.v));
+        if (BrowserWebSocket) {
+          isError = true;
         } else {
-          done(null);
-        }
-      }
-
-      switch (msg.e) {
-        case 'P':
-          progress(utils.toProgress(msg.p));
-          break;
-
-        case 'D':
           isDone = true;
-          if (BrowserWebSocket) {
-            ws.send(SonicMessage.ACK);
-            checkMsg();
+          done(ev);
+        }
+      });
+
+      ws.on('message', (_message) => {
+        const msg = BrowserWebSocket ? JSON.parse(_message.data) : JSON.parse(_message.toString('utf-8'));
+        const checkMsg = () => {
+          if (msg.v) {
+            done(new Error(`Query with trace_id \`${msg.p.trace_id}\` failed: ${msg.v}`));
           } else {
-            ws.send(SonicMessage.ACK, checkMsg);
+            done(null);
           }
-          break;
+        };
 
-        case 'T':
-          metadata(msg.p.map(function(elem) {
-            return [elem[0], typeof elem[1]];
-          }));
-          break;
+        switch (msg.e) {
+          case 'P':
+            progress(utils.toProgress(msg.p));
+            break;
 
-        case 'S':
-          if (typeof startedCb !== 'undefined') {
-            startedCb(msg.v);
-          }
-          break;
+          case 'D':
+            isDone = true;
+            if (BrowserWebSocket) {
+              ws.send(SonicMessage.ACK);
+              checkMsg();
+            } else {
+              ws.send(SonicMessage.ACK, checkMsg);
+            }
+            break;
 
-        case 'O':
-          output(msg.p);
-          break;
+          case 'T':
+            metadata(msg.p.map(elem => [elem[0], typeof elem[1]]));
+            break;
 
-        default:
+          case 'S':
+            if (typeof startedCb !== 'undefined') {
+              startedCb(msg.v);
+            }
+            break;
+
+          case 'O':
+            output(msg.p);
+            break;
+
+          default:
           // ignore to improve forwards compatibility
-          break;
-      }
+            break;
+        }
+      });
+    };
+  }
+
+  send(message, doneCb, outputCb, progressCb, metadataCb, startedCb) {
+    const ws = new WebSocket(this.url);
+    const doExec = this.doSend(doneCb, outputCb, progressCb, metadataCb, startedCb);
+
+    ws.on('open', () => {
+      doExec(JSON.stringify(message), ws);
     });
-  };
-};
 
-Client.prototype.exec = function(message, doneCb, outputCb, progressCb, metadataCb, startedCb) {
+    this.ws.push(ws);
 
-  var ws = new WebSocket(this.url);
-  var doExec = this.send(doneCb, outputCb, progressCb, metadataCb, startedCb);
+    return ws;
+  }
 
-  ws.on('open', function() {
-    doExec(JSON.stringify(message), ws);
-  });
+  stream(query) {
+    const emitter = new SonicEmitter();
+    const queryMsg = utils.toMsg(query);
 
-  this.ws.push(ws);
+    function done(err) {
+      if (err) {
+        emitter.emit('error', err);
+        return;
+      }
 
-  return ws;
-};
-
-Client.prototype.stream = function(query) {
-  var emitter = new SonicEmitter();
-  var queryMsg = utils.toMsg(query);
-  var ws;
-
-  function done(err) {
-    if (err) {
-      emitter.emit('error', err);
-      return;
+      emitter.emit('done');
     }
 
-    emitter.emit('done');
-  }
-
-  function output(elems) {
-    emitter.emit('data', elems);
-  }
-
-  function metadata(meta) {
-    emitter.emit('metadata', meta);
-  }
-
-  function progress(prog) {
-    emitter.emit('progress', prog);
-  }
-
-  function started(traceId) {
-    emitter.emit('started', traceId);
-  }
-
-  ws = this.exec(queryMsg, done, output, progress, metadata, started);
-
-  emitter.cancel = function(cb) {
-    cancel(ws, cb);
-  };
-
-  return emitter;
-};
-
-Client.prototype.run = function(query, doneCb) {
-
-  var data = [];
-  var queryMsg = utils.toMsg(query);
-  var ws;
-
-  function done(err) {
-    if (err) {
-      doneCb(err, null);
-    } else {
-      doneCb(null, data);
+    function output(elems) {
+      emitter.emit('data', elems);
     }
-  }
 
-  function output(elems) {
-    data.push(elems);
-  }
+    function metadata(meta) {
+      emitter.emit('metadata', meta);
+    }
 
-  ws = this.exec(queryMsg, done, output);
+    function progress(prog) {
+      emitter.emit('progress', prog);
+    }
 
-  return {
-    cancel: function(cb) {
+    function started(traceId) {
+      emitter.emit('started', traceId);
+    }
+
+    const ws = this.send(queryMsg, done, output, progress, metadata, started);
+
+    emitter.cancel = (cb) => {
       cancel(ws, cb);
-    }
-  };
-};
+    };
 
-Client.prototype.authenticate = function(user, apiKey, doneCb, traceId) {
-  var token;
-  var authMsg = {
-    e: 'H',
-    p: {
-      user: user,
-      trace_id: traceId
-    },
-    v: apiKey
-  };
-
-  function done(err) {
-    if (err) {
-      doneCb(err, null);
-    } else {
-      doneCb(null, token);
-    }
+    return emitter;
   }
 
-  function output(elems) {
-    token = elems[0];
+  run(query, doneCb) {
+    const data = [];
+    const queryMsg = utils.toMsg(query);
+
+    function done(err) {
+      if (err) {
+        doneCb(err, null);
+      } else {
+        doneCb(null, data);
+      }
+    }
+
+    function output(elems) {
+      data.push(elems);
+    }
+
+    const ws = this.send(queryMsg, done, output);
+
+    return {
+      cancel(cb) {
+        cancel(ws, cb);
+      },
+    };
   }
 
-  this.exec(authMsg, done, output);
-};
+  authenticate(user, apiKey, doneCb, traceId) {
+    let token;
+    const authMsg = {
+      e: 'H',
+      p: {
+        user,
+        trace_id: traceId,
+      },
+      v: apiKey,
+    };
 
-Client.prototype.close = function() {
-  this.ws.forEach(cancel);
-};
+    function done(err) {
+      if (err) {
+        doneCb(err, null);
+      } else {
+        doneCb(null, token);
+      }
+    }
+
+    function output(elems) {
+      token = elems[0];
+    }
+
+    this.send(authMsg, done, output);
+  }
+
+  close() {
+    this.ws.map(cancel);
+  }
+}
 
 module.exports.Client = Client;
