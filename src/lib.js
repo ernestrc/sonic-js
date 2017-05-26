@@ -29,17 +29,20 @@ const states = {
 
 class Client {
   constructor(sonicAddress,
-    { maxPoolSize, minPoolSize, debug, validateTimeout, maxTries, acquireTimeout } = {}) {
+    { maxPoolSize, minPoolSize, debug, autostart, validate,
+      validateTimeout, maxTries, acquireTimeout } = {}) {
     this.url = sonicAddress;
     this.running = {};
     this.nextId = 1;
     this.state = states.INITIALIZED;
     this.debug = debug;
-    this.validateTimeout = validateTimeout || 10000;
+    this.validateTimeout = validateTimeout || 2000;
     this.maxPoolSize = maxPoolSize || 5;
     this.minPoolSize = minPoolSize || 1;
     this.maxTries = maxTries || 1;
-    this.acquireTimeout = acquireTimeout || 2000;
+    this.validate = typeof validate === 'undefined' ? true : validate;
+    this.autostart = typeof autostart === 'undefined' ? true : autostart;
+    this.acquireTimeout = acquireTimeout || 3000;
     this._initializePool();
   }
 
@@ -49,8 +52,8 @@ class Client {
       max: this.maxPoolSize, // maximum size of the pool
       min: this.minPoolSize, // minimum size of the pool
       maxTries: this.maxTries,
-      autostart: true,
-      testOnBorrow: true,
+      autostart: this.autostart,
+      testOnBorrow: this.validate,
     };
 
     const WsFactory = {

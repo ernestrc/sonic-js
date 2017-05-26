@@ -8,7 +8,17 @@ const host = process.env.SONIC_HOST || 'wss://0.0.0.0:443';
 const API_KEY = '1234';
 const USER = 'serrallonga';
 
-const client = new Client(`${host}/v1/query`, { maxPoolSize: 5, minPoolSize: 2 });
+const opt = {
+  maxPoolSize: 5, /* max connection pool size */
+  minPoolSize: 1, /* min connection pool size */
+  maxTries: 1, /* max create connection attempts before bubbling up error */
+  autostart: true, /* should the Client start creating connections once the constructor is called */
+  validate: true, /* should the Client validate that connections are responsive before using them */
+  validateTimeout: 2000, /* new connection validation timeout */
+  acquireTimeout: 3000, /* new connection total acquisition timeout */
+};
+
+const client = new Client(`${host}/v1/query`, opt);
 
 const query = {
   query: '10',
