@@ -1,15 +1,16 @@
 /* eslint no-console: [0]*/
 
 // var Client = require('sonic-js').Client;
-var Client = require('../src/lib.js').Client;
-var assert = require('assert');
-var host = process.env.SONIC_HOST || 'wss://0.0.0.0:443';
-var API_KEY = '1234';
-var USER = 'serrallonga';
+const Client = require('../src/lib.js').Client;
+const assert = require('assert');
 
-var client = new Client(host + '/v1/query');
+const host = process.env.SONIC_HOST || 'wss://0.0.0.0:443';
+const API_KEY = '1234';
+const USER = 'serrallonga';
 
-var query = {
+const client = new Client(`${host}/v1/query`, { maxPoolSize: 5, minPoolSize: 2 });
+
+const query = {
   query: '10',
   config: {
     class: 'SyntheticSource',
@@ -18,89 +19,91 @@ var query = {
   }
 };
 
-var query2 = {
+const query2 = {
   query: '5',
   config: 'secured_test'
 };
 
-var done = 0;
+let done = 0;
 
 
 /* UNAUTHENTICATED Client.prototype.stream */
 
-var stream = client.stream(query);
+const stream = client.stream(query);
 
-stream.on('data', function(data) {
+stream.on('data', (data) => {
   console.log(data);
 });
 
-stream.on('progress', function(p) {
+stream.on('progress', (p) => {
   done += p.progress;
-  console.log('running.. ' + done + '/' + p.total + ' ' + p.units);
+  console.log(`running.. ${done}/${p.total} ${p.units}`);
 });
 
-stream.on('metadata', function(meta) {
-  console.log('metadata: ' + JSON.stringify(meta));
+stream.on('metadata', (meta) => {
+  console.log(`metadata: ${JSON.stringify(meta)}`);
 });
 
-stream.on('done', function() {
+stream.on('done', () => {
   console.log('stream is done!');
 });
 
-stream.on('error', function(err) {
-  console.log('stream error: ' + err);
+stream.on('error', (err) => {
+  console.log(`stream error: ${err}`);
 });
+
 
 /* UNAUTHENTICATED Client.prototype.run */
 
-client.run(query, function(err, res) {
+client.run(query, (err, res) => {
   if (err) {
     console.log(err);
     return;
   }
 
-  res.forEach(function(e) {
+  res.forEach((e) => {
     console.log(e);
   });
 
   console.log('exec is done!');
-
 });
-
-/* AUTHENTICATED Client.prototype.run */
 
 // `secured_test` source can be accessed without
 // an auth token that grants
 // authorization equal or higher than 3.
-client.run(query2, function(err) {
-  assert.throws(function () {
+client.run(query2, (err) => {
+  assert.throws(() => {
     if (err) {
       throw err;
     }
   });
 });
 
+
+/* AUTHENTICATED Client.prototype.run */
+
 // first we need to authenticate
-client.authenticate(USER, API_KEY, function(err, token) {
+client.authenticate(USER, API_KEY, (err, token) => {
   if (err) {
     throw err;
   }
 
   query2.auth = token;
 
-  client.run(query2, function(err, res) {
-    if (err) {
-      throw err;
+  client.run(query2, (qerr, res) => {
+    if (qerr) {
+      throw qerr;
     }
 
-    res.forEach(function(e) {
+    res.forEach((e) => {
       console.log(e);
     });
 
     console.log('secured exec is done!');
 
     // close ws
-    client.close();
-
+    client.close()
+      .then(() => console.log('released all resources'))
+      .catch(error => console.error(error));
   });
 });
