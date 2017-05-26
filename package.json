@@ -7,11 +7,10 @@
   "license": "MIT",
   "repository": "https://github.com/xarxa6/sonic-js",
   "scripts": {
-    "test": "node_modules/mocha/bin/mocha -r chai spec/close.js spec/ws.js"
+    "test": "node_modules/mocha/bin/mocha -r chai --timeout 10000 spec/close.js spec/ws.js"
   },
   "dependencies": {
-    "bufferutil": "^1.2.1",
-    "utf-8-validate": "^1.2.1",
+    "generic-pool": "git://github.com/Aleksandras-Novikovas/node-pool.git#59889c4b0adb5dea839a951fb351ff5ee6045768",
     "ws": "^1.1.0"
   },
   "devDependencies": {
@@ -22,5 +21,9 @@
     "eslint-plugin-jsx-a11y": "^5.0.3",
     "eslint-plugin-react": "^7.0.1",
     "mocha": "^2.5.3"
+  },
+  "optionalDependencies": {
+    "bufferutil": "^3.0.0",
+    "utf-8-validate": "^3.0.1"
   }
 }
