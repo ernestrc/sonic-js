@@ -11,7 +11,11 @@ const noop = () => {};
 // because the EventEmitter API used in Node.js is not available with the WebSocket browser API
 if (BrowserWebSocket) {
   WebSocket.prototype.on = function on(event, callback) {
-    this[`on${event}`] = callback;
+    this.addEventListener(event, callback);
+  };
+
+  WebSocket.prototype.removeListener = function removeListener(event, callback) {
+    this.removeEventListener(event, callback);
   };
 }
 
@@ -40,7 +44,8 @@ class Client {
     this.maxPoolSize = maxPoolSize || 5;
     this.minPoolSize = minPoolSize || 1;
     this.maxTries = maxTries || 1;
-    this.validate = typeof validate === 'undefined' ? true : validate;
+    /* browsers WebSocket API don't support sending ping/pong */
+    this.validate = (!BrowserWebSocket && typeof validate !== 'undefined') ? validate : false;
     this.autostart = typeof autostart === 'undefined' ? true : autostart;
     this.acquireTimeout = acquireTimeout || 3000;
     this._initializePool();
