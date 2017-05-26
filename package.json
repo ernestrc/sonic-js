@@ -1,6 +1,6 @@
 {
   "name": "sonic-js",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "ws client library for the Sonic protocol",
   "main": "src/lib.js",
   "author": "ernest@unstable.build",
