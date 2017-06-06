@@ -1,8 +1,10 @@
 const BrowserWebSocket = global.MozWebSocket || global.WebSocket;
 const WebSocket = BrowserWebSocket || require('ws'); // eslint-disable-line global-require
 const EventEmitter = require('events');
+
+const WsFactory = require('./WsFactory');
 const utils = require('./util');
-const pool = require('generic-pool');
+const Pool = require('generic-pool').Pool;
 
 const SonicMessage = utils.SonicMessage;
 const noop = () => {};
@@ -10,441 +12,377 @@ const noop = () => {};
 // this is an ugly hack to prevent browseryfied `ws` module to throw errors at runtime
 // because the EventEmitter API used in Node.js is not available with the WebSocket browser API
 if (BrowserWebSocket) {
-  WebSocket.prototype.on = function on(event, callback) {
-    this.addEventListener(event, callback);
-  };
+	WebSocket.prototype.on = function on(event, callback) {
+		this.addEventListener(event, callback);
+	};
 
-  WebSocket.prototype.removeListener = function removeListener(event, callback) {
-    this.removeEventListener(event, callback);
-  };
-}
-
-class SonicEmitter extends EventEmitter {}
-
-function getCloseError(ev) {
-  return new Error(`WebSocket close: code=${ev.code}; reason=${ev.reason}`);
+	WebSocket.prototype.removeListener = function removeListener(event, callback) {
+		this.removeEventListener(event, callback);
+	};
 }
 
 const states = {
-  INITIALIZED: 1,
-  CLOSING: 2,
-  CLOSED: 3,
+	INITIALIZED: 1,
+	CLOSING: 2,
+	CLOSED: 3,
 };
 
 class Client {
-  constructor(sonicAddress,
-    { maxPoolSize, minPoolSize, debug, autostart, validate,
-      validateTimeout, maxTries, acquireTimeout } = {}) {
-    this.url = sonicAddress;
-    this.running = {};
-    this.nextId = 1;
-    this.state = states.INITIALIZED;
-    this.debug = debug;
-    this.validateTimeout = validateTimeout || 2000;
-    this.maxPoolSize = maxPoolSize || 5;
-    this.minPoolSize = minPoolSize || 1;
-    this.maxTries = maxTries || 1;
-    /* browsers WebSocket API don't support sending ping/pong */
-    this.validate = (!BrowserWebSocket && typeof validate !== 'undefined') ? validate : false;
-    this.autostart = typeof autostart === 'undefined' ? true : autostart;
-    this.acquireTimeout = acquireTimeout || 3000;
-    this._initializePool();
-  }
+	constructor(sonicAddress, { maxPoolSize, minPoolSize, debug, acquireTimeout } = {}) {
+		this.url = sonicAddress;
+		this.running = {};
+		this.nextId = 1;
+		this.state = states.INITIALIZED;
+		this.debug = debug;
+		this.maxPoolSize = maxPoolSize || 5;
+		this.minPoolSize = minPoolSize || 1;
+		this.acquireTimeout = acquireTimeout || 3000;
+		this._initializePool();
+	}
 
-  _initializePool() {
-    const client = this;
-    const poolOpts = {
-      max: this.maxPoolSize, // maximum size of the pool
-      min: this.minPoolSize, // minimum size of the pool
-      maxTries: this.maxTries,
-      autostart: this.autostart,
-      testOnBorrow: this.validate,
-    };
+	_log(log) {
+		if (typeof this.debug === 'function') {
+			this.debug(log);
+		} else if (this.debug) {
+			console.log(log); // eslint-disable-line no-console
+		}
+	}
 
-    const WsFactory = {
-      create() {
-        return new Promise((resolve, reject) => {
-          const ws = new WebSocket(client.url);
-          let onOpen, onClose;
+	_initializePool() {
+		const factory = new WsFactory(WebSocket, this.url);
+		const poolOpts = {
+			name: 'sonic',
+			create: factory.create.bind(factory),
+			validate: factory.validate.bind(factory),
+			destroy: factory.destroy.bind(factory),
+			max: this.maxPoolSize, // maximum size of the pool
+			min: this.minPoolSize, // minimum size of the pool
+			log: this.debug,
+		};
 
-          const onError = (err) => {
-            ws.removeListener('open', onOpen);
-            ws.removeListener('close', onClose);
-            reject(err);
-          };
 
-          onOpen = () => {
-            ws.removeListener('error', onError);
-            ws.removeListener('close', onClose);
-            resolve(ws);
-          };
+		this.pool = new Pool(poolOpts);
+	}
 
-          onClose = (ev) => {
-            ws.removeListener('error', onError);
-            ws.removeListener('open', onOpen);
-            reject(getCloseError(ev));
-          };
+	_cancel(id, _cb) {
+		const ws = this.running[id];
+		const cb = typeof _cb === 'function' ? _cb : noop;
 
-          ws.on('open', onOpen);
-          ws.on('close', onClose);
-          ws.on('error', onError);
-        });
-      },
+		this._log(`cancelling: WebSocket(${id})`);
 
-      validate(ws) {
-        return new Promise((resolve) => {
-          let onPong;
+		/* a 'D' message is expected when a cancel is send,
+		 * therefore resource cleanup should be handled by done handler */
+		if (!ws) {
+			this._log(new Error(`cancel: WebSocket(${id}) is not running any queries`));
+			cb();
+			return;
+		}
 
-          const timer = setTimeout(() => {
-            resolve(false);
-            ws.removeListener('pong', onPong);
-          }, this.validateTimeout);
+		const doSend = () => {
+			if (!BrowserWebSocket) {
+				ws.send(SonicMessage.CANCEL, () => {
+					this._log(`cancelled: WebSocket(${id})`);
+					cb();
+				});
+				return;
+			}
 
-          onPong = () => {
-            clearTimeout(timer);
-            resolve(true);
-          };
+			try {
+				ws.send(SonicMessage.CANCEL);
+				this._log(`cancelled: WebSocket(${id})`);
+				cb();
+			} catch (e) {
+				this._log(e);
+				cb(e);
+			}
+		};
 
-          ws.on('pong', onPong);
-
-          try {
-            ws.ping();
-          } catch (e) {
-            resolve(false);
-          }
-        });
-      },
-
-      destroy(ws) {
-        return new Promise((resolve) => {
-          ws.on('close', () => {
-            resolve();
-          });
-          ws.close(1000, 'pool#destroy');
-        });
-      },
-    };
-
-    this.pool = pool.createPool(WsFactory, poolOpts);
-  }
-
-  _cancel(id, _cb) {
-    const ws = this.running[id];
-    const cb = typeof _cb === 'function' ? _cb : noop;
-
-    if (this.debug) console.log(`cancelling: WebSocket(${id})`);
-
-    /* a 'D' message is expected when a cancel is send,
-     * therefore resource cleanup should be handled by done handler
-     */
-    if (!ws) {
-      if (this.debug) console.error(new Error(`cancel: WebSocket(${id}) is not running any queries`));
-      cb();
-      return;
-    }
-
-    const doSend = () => {
-      if (!BrowserWebSocket) {
-        ws.send(SonicMessage.CANCEL, () => {
-          if (this.debug) console.log(`cancelled: WebSocket(${id})`);
-          cb();
-        });
-        return;
-      }
-
-      try {
-        ws.send(SonicMessage.CANCEL);
-        if (this.debug) console.log(`cancelled: WebSocket(${id})`);
-        cb();
-      } catch (e) {
-        if (this.debug) console.error(e);
-        cb(e);
-      }
-    };
-
-    if (ws.readyState === WebSocket.CONNECTING) {
-      ws.on('open', doSend);
-    } if (ws.readyState === WebSocket.OPEN) {
-      doSend();
-    } else {
-      // connection is CLOSING/CLOSED
-      cb();
-    }
-  }
+		if (ws.readyState === WebSocket.CONNECTING) {
+			ws.on('open', doSend);
+		} if (ws.readyState === WebSocket.OPEN) {
+			doSend();
+		} else {
+			// connection is CLOSING/CLOSED
+			cb();
+		}
+	}
 
   /* ws client agnostic send method */
-  _wsSend(message, doneCb, outputCb, progressCb, metadataCb, startedCb, ws) {
-    const output = outputCb || noop;
-    const progress = progressCb || noop;
-    const metadata = metadataCb || noop;
-    let onError, onClose, onMessage;
+	_wsSend(message, doneCb, outputCb, progressCb, metadataCb, startedCb, ws) {
+		const output = outputCb || noop;
+		const progress = progressCb || noop;
+		const metadata = metadataCb || noop;
+		let onError, onClose, onMessage;
 
-    const done = (err) => {
-      ws.removeListener('close', onClose);
-      ws.removeListener('error', onError);
-      ws.removeListener('message', onMessage);
-      doneCb(err);
-    };
+		const done = (err) => {
+			ws.removeListener('close', onClose);
+			ws.removeListener('error', onError);
+			ws.removeListener('message', onMessage);
+			doneCb(err);
+		};
 
-    onClose = (ev) => {
-      if (this.debug) console.log(`WebSocket closed: code=${ev.code}; reason=${ev.reason};`);
-      if (!ws.sonicError) {
-        done(getCloseError(ev));
-      } else {
-        done(ws.sonicError);
-      }
-    };
+		onClose = (ev) => {
+			this._log(`WebSocket closed: code=${ev.code}; reason=${ev.reason};`);
+			if (!ws.sonicError) {
+				done(utils.getCloseError(ev));
+			} else {
+				done(ws.sonicError);
+			}
+		};
 
-    onError = (err) => {
-      if (this.debug) console.error(err);
-      // err is defined with `ws`, but not with the
-      // browser's WebSocket API so we need to get the errors from the close event
-      ws.sonicError = err; // eslint-disable-line no-param-reassign
-    };
+		onError = (err) => {
+			this._log(err);
+			// err is defined with `ws`, but not with the
+			// browser's WebSocket API so we need to get the errors from the close event
+			ws.sonicError = err; // eslint-disable-line no-param-reassign
+		};
 
-    onMessage = (_message) => {
-      const msg = BrowserWebSocket ? JSON.parse(_message.data) : JSON.parse(_message.toString('utf-8'));
-      const completeStream = () => {
-        if (this.debug) console.log(`completed complete/ack sequence: trace_id=${msg.p.trace_id}; error=${msg.v};`);
-        if (msg.v) {
-          done(new Error(`query with trace_id \`${msg.p.trace_id}\` failed: ${msg.v}`));
-        } else {
-          done(null);
-        }
-      };
+		onMessage = (_message) => {
+			const msg = BrowserWebSocket ? JSON.parse(_message.data) : JSON.parse(_message.toString('utf-8'));
+			const completeStream = () => {
+				this._log(`completed complete/ack sequence: trace_id=${msg.p.trace_id}; error=${msg.v};`);
+				if (msg.v) {
+					done(new Error(`query with trace_id \`${msg.p.trace_id}\` failed: ${msg.v}`));
+				} else {
+					done(null);
+				}
+			};
 
-      switch (msg.e) {
-        case 'P':
-          progress(utils.toProgress(msg.p));
-          break;
+			switch (msg.e) {
+			case 'P':
+				progress(utils.toProgress(msg.p));
+				break;
 
-        case 'D':
-          if (BrowserWebSocket) {
-            ws.send(SonicMessage.ACK);
-            completeStream();
-          } else {
-            ws.send(SonicMessage.ACK, completeStream);
-          }
-          break;
+			case 'D':
+				if (BrowserWebSocket) {
+					ws.send(SonicMessage.ACK);
+					completeStream();
+				} else {
+					ws.send(SonicMessage.ACK, completeStream);
+				}
+				break;
 
-        case 'T':
-          metadata(msg.p.map(elem => [elem[0], typeof elem[1]]));
-          break;
+			case 'T':
+				metadata(msg.p.map(elem => [elem[0], typeof elem[1]]));
+				break;
 
-        case 'S':
-          if (typeof startedCb !== 'undefined') {
-            startedCb(msg.v);
-          }
-          break;
+			case 'S':
+				if (typeof startedCb !== 'undefined') {
+					startedCb(msg.v);
+				}
+				break;
 
-        case 'O':
-          output(msg.p);
-          break;
+			case 'O':
+				output(msg.p);
+				break;
 
-        default:
-          if (this.debug) console.log(`unsupported message received: ${JSON.stringify(msg)}`);
-          break;
-      }
-    };
+			default:
+				this._log(`unsupported message received: ${JSON.stringify(msg)}`);
+				break;
+			}
+		};
 
-    ws.on('close', onClose);
-    ws.on('error', onError);
-    ws.on('message', onMessage);
-    ws.send(message);
-    if (this.debug) console.log(`sending message: ${JSON.stringify(message)}`);
-  }
+		ws.on('close', onClose);
+		ws.on('error', onError);
+		ws.on('message', onMessage);
+		ws.send(message);
+		this._log(`sending message: ${JSON.stringify(message)}`);
+	}
 
-  /* pool-aware send method */
-  _send(message, doneCb, outputCb, progressCb, metadataCb, startedCb) {
-    switch (this.state) {
-      case states.CLOSED:
-        doneCb(new Error('client is closed and cannot accept more work'));
-        return;
-      case states.CLOSING:
-        doneCb(new Error('client is closing and cannot accept more work'));
-        return;
-      default:
-    }
+	/* pool-aware send method */
+	_send(message, doneCb, outputCb, progressCb, metadataCb, startedCb) {
+		switch (this.state) {
+		case states.CLOSED:
+			doneCb(new Error('client is closed and cannot accept more work'));
+			return;
+		case states.CLOSING:
+			doneCb(new Error('client is closing and cannot accept more work'));
+			return;
+		default:
+		}
 
-    // identify send for cancel hooks
-    const id = this.nextId++;
-    let doned = false;
+		// identify send for cancel hooks
+		const id = this.nextId++;
+		let doned = false;
 
-    let timer;
-    if (this.debug) {
-      timer = setTimeout(() =>
-        console.log(`its taking more than (${this.acquireTimeout}) to acquire resource for ticket=${id}`),
-          this.acquireTimeout);
-    }
+		const timer = setTimeout(() => {
+			const err = new Error(`its taking more than (${this.acquireTimeout}) to acquire resource for ticket=${id}`);
+			this._log(err);
+			doneCb(err);
+		}, this.acquireTimeout);
 
-    // acquire connection
-    this.pool.acquire().then((ws) => {
-      this.running[id] = ws;
+		// acquire connection
+		this.pool.acquire((err, ws) => {
+			clearTimeout(timer);
 
-      if (this.debug) {
-        if (!ws.sonicId) {
-          /* first ticket for this resource is the resource ID */
-          ws.sonicId = id; // eslint-disable-line no-param-reassign
-        }
-        console.log(`acquired resource=${ws.sonicId} for ticket=${id}`);
-        clearTimeout(timer);
-      }
+			if (err) {
+				doneCb(err);
+				return;
+			}
 
-      // doneCb override to release connection back to pool
-      const doDoneCb = (err) => {
-        if (this.debug) console.log(`done with ticket=${id}; resource=${ws.sonicId}`);
-        if (!doned) {
-          doned = true;
-          delete this.running[id];
+			this.running[id] = ws;
 
-          if (ws.sonicDestroy) {
-            if (this.debug) console.log(`destroying resource=${ws.sonicId}; ticket=${id}`);
-            this.pool.destroy(ws);
-          } else {
-            if (this.debug) console.log(`releasing resource=${ws.sonicId}; ticket=${id}`);
-            this.pool.release(ws);
-          }
-          doneCb(err);
-        }
-      };
+			if (this.debug) {
+				if (!ws.sonicId) {
+					/* first ticket for this resource is the resource ID */
+					ws.sonicId = id; // eslint-disable-line no-param-reassign
+				}
+				console.log(`acquired resource=${ws.sonicId} for ticket=${id}`); // eslint-disable-line no-console
+			}
 
-      try {
-        this._wsSend(JSON.stringify(message), doDoneCb, outputCb, progressCb, metadataCb, startedCb, ws);
-      } catch (e) {
-        if (this.debug) console.error(e);
-        this.pool.release(ws);
-        doDoneCb(e);
-      }
-    }).catch(doneCb);
+			// doneCb override to release connection back to pool
+			const doDoneCb = (err) => {
+				this._log(`done with ticket=${id}; resource=${ws.sonicId}`);
+				if (!doned) {
+					doned = true;
+					delete this.running[id];
 
-    return id; // eslint-disable-line consistent-return
-  }
+					if (err) {
+						this._log(`destroying resource=${ws.sonicId}; ticket=${id}`);
+						/* pool.destroy produces unexpected results; this forces resourced to be invalid */
+						ws.close(1011, 'pool#destroy');
+					} else {
+						this._log(`releasing resource=${ws.sonicId}; ticket=${id}`);
+					}
+					this.pool.release(ws);
+					doneCb(err);
+				}
+			};
 
-  stream(query) {
-    const emitter = new SonicEmitter();
-    const queryMsg = utils.toMsg(query);
+			try {
+				this._wsSend(JSON.stringify(message), doDoneCb, outputCb, progressCb, metadataCb, startedCb, ws);
+			} catch (e) {
+				this._log(e);
+				doDoneCb(e);
+			}
+		});
 
-    function done(err) {
-      if (err) {
-        emitter.emit('error', err);
-        return;
-      }
+		return id; // eslint-disable-line consistent-return
+	}
 
-      emitter.emit('done');
-    }
+	stream(query) {
+		const emitter = new EventEmitter();
+		const queryMsg = utils.toMsg(query);
 
-    function output(elems) {
-      emitter.emit('data', elems);
-    }
+		function done(err) {
+			if (err) {
+				emitter.emit('error', err);
+				return;
+			}
 
-    function metadata(meta) {
-      emitter.emit('metadata', meta);
-    }
+			emitter.emit('done');
+		}
 
-    function progress(prog) {
-      emitter.emit('progress', prog);
-    }
+		function output(elems) {
+			emitter.emit('data', elems);
+		}
 
-    function started(traceId) {
-      emitter.emit('started', traceId);
-    }
+		function metadata(meta) {
+			emitter.emit('metadata', meta);
+		}
 
-    const id = this._send(queryMsg, done, output, progress, metadata, started);
+		function progress(prog) {
+			emitter.emit('progress', prog);
+		}
 
-    emitter.cancel = (cb) => {
-      this._cancel(id, cb);
-    };
+		function started(traceId) {
+			emitter.emit('started', traceId);
+		}
 
-    return emitter;
-  }
+		const id = this._send(queryMsg, done, output, progress, metadata, started);
 
-  /* TODO: deprecate in favor of run2 */
-  run(query, doneCb) {
-    const data = [];
-    const queryMsg = utils.toMsg(query);
+		emitter.cancel = (cb) => {
+			this._cancel(id, cb);
+		};
 
-    function done(err) {
-      if (err) {
-        doneCb(err, null);
-      } else {
-        doneCb(null, data);
-      }
-    }
+		return emitter;
+	}
 
-    function output(elems) {
-      data.push(elems);
-    }
+	/* TODO: deprecate in favor of run2 */
+	run(query, doneCb) {
+		const data = [];
+		const queryMsg = utils.toMsg(query);
 
-    this._send(queryMsg, done, output);
-  }
+		function done(err) {
+			if (err) {
+				doneCb(err, null);
+			} else {
+				doneCb(null, data);
+			}
+		}
 
-  run2(query) {
-    return new Promise((resolve, reject) => {
-      this.run(query, (err, data) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(data);
-      });
-    });
-  }
+		function output(elems) {
+			data.push(elems);
+		}
 
-  authenticate(user, apiKey, doneCb, traceId) {
-    let token;
-    const authMsg = {
-      e: 'H',
-      p: {
-        user,
-        trace_id: traceId,
-      },
-      v: apiKey,
-    };
+		this._send(queryMsg, done, output);
+	}
 
-    function done(err) {
-      if (err) {
-        doneCb(err);
-      } else {
-        doneCb(null, token);
-      }
-    }
+	run2(query) {
+		return new Promise((resolve, reject) => {
+			this.run(query, (err, data) => {
+				if (err) {
+					reject(err);
+					return;
+				}
+				resolve(data);
+			});
+		});
+	}
 
-    function output(elems) {
-      token = elems[0];
-    }
+	authenticate(user, apiKey, doneCb, traceId) {
+		let token;
+		const authMsg = {
+			e: 'H',
+			p: {
+				user,
+				trace_id: traceId,
+			},
+			v: apiKey,
+		};
 
-    this._send(authMsg, done, output);
-  }
+		function done(err) {
+			if (err) {
+				doneCb(err);
+			} else {
+				doneCb(null, token);
+			}
+		}
 
-  _close() {
-    if (this.state !== states.CLOSING) {
-      return Promise.resolve();
-    }
-    return this.pool.drain().then(() => this.pool.clear());
-  }
+		function output(elems) {
+			token = elems[0];
+		}
 
-  cancel() {
-    const ids = Object.keys(this.running);
+		this._send(authMsg, done, output);
+	}
 
-    return Promise.all(ids.map(id => new Promise((resolve, reject) => {
-      this._cancel(id, (err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve();
-      });
-    })));
-  }
+	_close() {
+		if (this.state !== states.CLOSING) {
+			return Promise.resolve();
+		}
+		return this.pool.drain(() => this.pool.destroyAllNow());
+	}
 
-  close() {
-    this.state = states.CLOSING;
-    return this.cancel()
-      .then(() => this._close())
-      .then(() => {
-        this.state = states.CLOSED;
-      });
-  }
+	cancel() {
+		const ids = Object.keys(this.running);
+
+		return Promise.all(ids.map(id => new Promise((resolve, reject) => {
+			this._cancel(id, (err) => {
+				if (err) {
+					reject(err);
+					return;
+				}
+				resolve();
+			});
+		})));
+	}
+
+	close() {
+		this.state = states.CLOSING;
+		return this.cancel()
+			.then(() => this._close())
+			.then(() => this.state = states.CLOSED);
+	}
 }
 
 module.exports.Client = Client;

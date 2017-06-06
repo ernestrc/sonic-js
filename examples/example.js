@@ -4,34 +4,30 @@
 const Client = require('../src/lib.js').Client;
 const assert = require('assert');
 
-const host = process.env.SONIC_HOST || 'wss://0.0.0.0:443';
+const host = process.env.SONIC_HOST || 'wss://0.0.0.0:9111';
 const API_KEY = '1234';
 const USER = 'serrallonga';
 
 const opt = {
-  maxPoolSize: 5, /* max connection pool size */
-  minPoolSize: 1, /* min connection pool size */
-  maxTries: 1, /* max create connection attempts before bubbling up error */
-  autostart: true, /* should the Client start creating connections once the constructor is called */
-  validate: true, /* should the Client validate that connections are responsive before using them */
-  validateTimeout: 2000, /* new connection validation timeout */
-  acquireTimeout: 3000, /* new connection total acquisition timeout */
+	maxPoolSize: 5, /* max connection pool size */
+	minPoolSize: 1, /* min connection pool size */
+	acquireTimeout: 3000, /* new connection total acquisition timeout */
 };
 
 const client = new Client(`${host}/v1/query`, opt);
 
 const query = {
-  query: '10',
-  config: {
-    class: 'SyntheticSource',
-    seed: 1000,
-    'progress-delay': 10
-  }
+	query: '10',
+	config: {
+		class: 'SyntheticSource',
+		seed: 1000,
+		'progress-delay': 10
+	}
 };
 
 const query2 = {
-  query: '5',
-  config: 'secured_test'
+	query: '5',
+	config: 'secured_test'
 };
 
 let done = 0;
@@ -42,51 +38,51 @@ let done = 0;
 const stream = client.stream(query);
 
 stream.on('data', (data) => {
-  console.log(data);
+	console.log(data);
 });
 
 stream.on('progress', (p) => {
-  done += p.progress;
-  console.log(`running.. ${done}/${p.total} ${p.units}`);
+	done += p.progress;
+	console.log(`running.. ${done}/${p.total} ${p.units}`);
 });
 
 stream.on('metadata', (meta) => {
-  console.log(`metadata: ${JSON.stringify(meta)}`);
+	console.log(`metadata: ${JSON.stringify(meta)}`);
 });
 
 stream.on('done', () => {
-  console.log('stream is done!');
+	console.log('stream is done!');
 });
 
 stream.on('error', (err) => {
-  console.log(`stream error: ${err}`);
+	console.log(`stream error: ${err}`);
 });
 
 
 /* UNAUTHENTICATED Client.prototype.run */
 
 client.run(query, (err, res) => {
-  if (err) {
-    console.log(err);
-    return;
-  }
+	if (err) {
+		console.log(err);
+		return;
+	}
 
-  res.forEach((e) => {
-    console.log(e);
-  });
+	res.forEach((e) => {
+		console.log(e);
+	});
 
-  console.log('exec is done!');
+	console.log('exec is done!');
 });
 
 // `secured_test` source can be accessed without
 // an auth token that grants
 // authorization equal or higher than 3.
 client.run(query2, (err) => {
-  assert.throws(() => {
-    if (err) {
-      throw err;
-    }
-  });
+	assert.throws(() => {
+		if (err) {
+			throw err;
+		}
+	});
 });
 
 
@@ -94,26 +90,26 @@ client.run(query2, (err) => {
 
 // first we need to authenticate
 client.authenticate(USER, API_KEY, (err, token) => {
-  if (err) {
-    throw err;
-  }
+	if (err) {
+		throw err;
+	}
 
-  query2.auth = token;
+	query2.auth = token;
 
-  client.run(query2, (qerr, res) => {
-    if (qerr) {
-      throw qerr;
-    }
+	client.run(query2, (qerr, res) => {
+		if (qerr) {
+			throw qerr;
+		}
 
-    res.forEach((e) => {
-      console.log(e);
-    });
+		res.forEach((e) => {
+			console.log(e);
+		});
 
-    console.log('secured exec is done!');
+		console.log('secured exec is done!');
 
     // close ws
-    client.close()
+		client.close()
       .then(() => console.log('released all resources'))
       .catch(error => console.error(error));
-  });
+	});
 });

@@ -10,7 +10,7 @@
     "test": "node_modules/mocha/bin/mocha -r chai --timeout 10000 spec/close.js spec/ws.js"
   },
   "dependencies": {
-    "generic-pool": "git://github.com/Aleksandras-Novikovas/node-pool.git#59889c4b0adb5dea839a951fb351ff5ee6045768",
+    "generic-pool": "^2.5.4",
     "ws": "^1.1.0"
   },
   "devDependencies": {
