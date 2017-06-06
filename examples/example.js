@@ -4,7 +4,7 @@
 const Client = require('../src/lib.js').Client;
 const assert = require('assert');
 
-const host = process.env.SONIC_HOST || 'wss://0.0.0.0:9111';
+const host = process.env.SONIC_HOST || 'ws://0.0.0.0:9111';
 const API_KEY = '1234';
 const USER = 'serrallonga';
 

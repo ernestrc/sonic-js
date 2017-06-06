@@ -3,7 +3,7 @@ const Client = require('../src/lib.js').Client;
 const process = require('process');
 const util = require('./util');
 
-const sonicEndpoint = `${process.env.SONIC_HOST || 'wss://0.0.0.0:9111'}/v1/query`;
+const sonicEndpoint = `${process.env.SONIC_HOST || 'ws://0.0.0.0:9111'}/v1/query`;
 
 let token;
 
@@ -150,7 +150,7 @@ describe('Sonic ws', () => {
 		});
 	});
 
-	runSpecTests(new Client(sonicEndpoint, { debug: true, maxPoolSize: 1, minPoolSize: 1, }), 'single connection');
+	runSpecTests(new Client(sonicEndpoint, { maxPoolSize: 1, minPoolSize: 1, }), 'single connection');
 
 	describe('Sonic ws with authentication', () => {
 		const authenticated = new Client(sonicEndpoint);

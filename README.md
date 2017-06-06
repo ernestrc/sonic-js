@@ -15,7 +15,7 @@ npm install sonic-js
 var Client = require('sonic-js').Client;
 var assert = require('assert');
 
-var client = new Client('wss://0.0.0.0:443');
+var client = new Client('ws://0.0.0.0:9111');
 
 var query = {
   query: '5',

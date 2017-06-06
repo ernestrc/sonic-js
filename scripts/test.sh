@@ -5,18 +5,7 @@ export DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
 DOMAIN=sonicd.unstable.build
 
 clean() {
-  rm -rf /tmp/sonicd;
-  rm -rf $DIR/certs;
   [[ -z "$SONICD_CONTAINER" ]] && echo "skipping rm sonicd container" || docker rm -f $SONICD_CONTAINER;
-  # [[ -z "$NGINX_CONTAINER" ]] && echo "skipping rm nginx container" || docker rm -f $NGINX_CONTAINER;
-}
-
-create_certs() {
-  mkdir $DIR/certs && \
-    cd $DIR/certs && \
-    $DIR/gencert.sh $DOMAIN && \
-    cd $DIR && \
-    echo 'generated temp certs'
 }
 
 test_exit() {
@@ -33,12 +22,6 @@ docker pull xarxa6/sonicd
 [[ $? -ne 0 ]] && exit 1
 
 echo "Starting WS integration spec for $GIT_COMMIT_SHORT";
-
-create_certs;
-
-# NGINX_CONTAINER=$(docker run -v ${DIR}/nginx.conf:/etc/nginx/nginx.conf:ro -v ${DIR}/certs:/etc/ssl/localcerts:ro -d --net=host nginx);
-# test_exit $NGINX_CONTAINER
-# echo "deployed nginx ssl proxy container: $NGINX_CONTAINER";
 
 SONICD_CONTAINER=$(docker run -d -v ${DIR}:/etc/sonicd:ro -p 9111:9111 xarxa6/sonicd);
 test_exit $SONICD_CONTAINER

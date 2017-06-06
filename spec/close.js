@@ -2,7 +2,7 @@
 const Client = require('../src/lib.js').Client;
 const assert = require('chai').assert;
 
-const sonicEndpoint = `${process.env.SONIC_HOST || 'wss://0.0.0.0:9111'}/v1/query`;
+const sonicEndpoint = `${process.env.SONIC_HOST || 'ws://0.0.0.0:9111'}/v1/query`;
 
 describe('Client#close', () => {
 	it('should cancel all ongoing queries', () => {
